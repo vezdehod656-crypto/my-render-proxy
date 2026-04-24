@@ -1,38 +1,61 @@
-const ProxyChain = require('proxy-chain');
+м запрос
 
-const PROXY_USERNAME = 'mk6';
-const PROXY_PASSWORD = '17051891Yra';
+ proxy.web(req, res, { target: req.url, secure: false }, (err) => {
 
-const port = process.env.PORT || 8080;
-const server = new ProxyChain.Server({
-    host: '0.0.0.0',
-    port: port,
-    verbose: true,
-    prepareRequestFunction: ({ username, password }) => {
-        if (username === PROXY_USERNAME && password === PROXY_PASSWORD) {
-            return { upstreamProxyUrl: null };
-        }
-        return {
-            requestAuthentication: true,
-            upstreamProxyUrl: null,
-            failMsg: 'Auth failed'
-        };
-    }
+  res.writeHead(500);
+
+  res.end('Proxy Error');
+
+ });
+
 });
 
-server.listen(() => {
-    console.log(`✅ Proxy running on port ${port}`);
-    console.log(`🔐 Login: ${PROXY_USERNAME}, Password: ${PROXY_PASSWORD}`);
+
+
+// Поддержка HTTPS CONNECT
+
+server.on('connect', (req, clientSocket, head) => {
+
+ const auth = req.headers['proxy-authorization'];
+
+ if (!auth || auth !== 'Basic ' + Buffer.from('user:password').toString('base64')) {
+
+  clientSocket.write('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="Proxy"\r\n\r\n');
+
+  clientSocket.end();
+
+  return;
+
+ }
+
+
+
+ const { port, hostname } = new URL(`http://${req.url}`);
+
+ const serverSocket = require('net').connect(port || 443, hostname, () => {
+
+  clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+
+  serverSocket.write(head);
+
+  serverSocket.pipe(clientSocket);
+
+  clientSocket.pipe(serverSocket);
+
+ });
+
+
+
+ serverSocket.on('error', () => clientSocket.end());
+
+ clientSocket.on('error', () => serverSocket.end());
+
 });
 
-server.on('error', (err) => {
-    console.error('Proxy error:', err);
-});
 
-// ===== ДОБАВЛЯЕМ ОБРАБОТЧИК ДЛЯ /ping (чтобы сервер не засыпал) =====
-server.on('request', (req, res) => {
-    if (req.url === '/ping') {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('pong');
-    }
+
+server.listen(port, () => {
+
+ console.log(`Proxy server is running on port ${port}`);
+
 });
