@@ -1,61 +1,31 @@
-м запрос
+const express = require('express');
+const { createProxyMiddleware } = require('http-proxy-middleware');
 
- proxy.web(req, res, { target: req.url, secure: false }, (err) => {
+const app = express();
 
-  res.writeHead(500);
+const auth = (req, res, next) => {
+  const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
+  const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
 
-  res.end('Proxy Error');
+  if (login === 'user' && password === 'password') {
+    return next();
+  }
 
- });
+  res.set('WWW-Authenticate', 'Basic realm="Proxy"');
+  res.status(401).send('Authentication required.');
+};
 
+app.use(auth);
+
+app.use('/', createProxyMiddleware({
+  target: 'https://example.com',
+  changeOrigin: true,
+  secure: false
+}));
+
+app.get('/ping', (req, res) => {
+  res.send('pong');
 });
 
-
-
-// Поддержка HTTPS CONNECT
-
-server.on('connect', (req, clientSocket, head) => {
-
- const auth = req.headers['proxy-authorization'];
-
- if (!auth || auth !== 'Basic ' + Buffer.from('user:password').toString('base64')) {
-
-  clientSocket.write('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="Proxy"\r\n\r\n');
-
-  clientSocket.end();
-
-  return;
-
- }
-
-
-
- const { port, hostname } = new URL(`http://${req.url}`);
-
- const serverSocket = require('net').connect(port || 443, hostname, () => {
-
-  clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-
-  serverSocket.write(head);
-
-  serverSocket.pipe(clientSocket);
-
-  clientSocket.pipe(serverSocket);
-
- });
-
-
-
- serverSocket.on('error', () => clientSocket.end());
-
- clientSocket.on('error', () => serverSocket.end());
-
-});
-
-
-
-server.listen(port, () => {
-
- console.log(`Proxy server is running on port ${port}`);
-
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Running on ${PORT}`));
